@@ -93,7 +93,9 @@ and delete the question from this file.
     - Attach with `gh` as in the `verify-frontend` skill. Lessons from the AgentTree demos are in the
       `project_agent-tree` memory: keep private session titles out of frame, and use the fake core or
       demo-only agents.
-    - Keep the `.cast` too (small, text, replayable), e.g. under `docs/demos/` for spec walkthroughs.
+    - A first version exists for the spec: [`assets/make-demo.sh`](../assets/make-demo.sh) records the scripted
+      mock in [`assets/`](../assets/) and renders `assets/noesis-mock-demo.mp4`. The same pipeline can record
+      the real TUI later.
 
     Open: should every UI PR require a recording, and should we also attach a still screenshot (one frame
     rendered from the cast) for quick viewing?

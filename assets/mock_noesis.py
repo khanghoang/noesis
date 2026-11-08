@@ -5,7 +5,8 @@ Nothing here talks to herdr-core: the tree, the agents and the conversations are
 made up. It plays a fixed script (keys are shown in the bottom-right corner) to
 illustrate the tree view (spec §3), the main view, fork (§6.2) and roll-up (§6.4).
 
-    asciinema rec -c 'python3 docs/demos/mock_noesis.py' demo.cast   # 120x34 terminal
+    python3 assets/mock_noesis.py     # watch it in a 120x34 terminal
+    bash assets/make-demo.sh          # record and render assets/noesis-mock-demo.mp4
 """
 
 import sys

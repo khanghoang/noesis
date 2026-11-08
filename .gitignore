@@ -1,2 +1,2 @@
-docs/demos/*.cast
+*.cast
 __pycache__/

@@ -25,6 +25,12 @@ See [herdr-core-notes.md](herdr-core-notes.md) for the facts noesis relies on, d
 The first draft of the spec was based on the herdr **app** (0.9.5) socket API by mistake; those references
 were removed after the PR #1 review and are still in this branch's first commit if ever needed.
 
+## Comparisons
+
+- [cmux-tui-comparison.md](cmux-tui-comparison.md): cmux's "mux" (cmux-tui, at commit `a79cbde`) vs herdr-core
+  v0.1.18: data model, agent status, API, machines, and what it means for noesis. Distilled notes only; no
+  cmux files are copied here.
+
 ## Not yet captured
 
 - **Eternal Terminal (ET)** docs: whether it can carry a plain byte stream without a PTY, port forwarding,

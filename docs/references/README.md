@@ -28,4 +28,4 @@ were removed after the PR #1 review and are still in this branch's first commit 
 ## Not yet captured
 
 - **Eternal Terminal (ET)** docs: whether it can carry a plain byte stream without a PTY, port forwarding,
-  session lifetime. ET isn't installed on this VM; the ET parts of the spec are unverified (open question 16).
+  session lifetime. ET isn't installed on this VM; the ET parts of the spec are unverified (open question 17).

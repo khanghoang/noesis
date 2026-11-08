@@ -44,28 +44,63 @@ and delete the question from this file.
     does the child report `ROLLUP-DONE` on screen or via `hc send` to its parent?
 14. **Fork command per agent kind.** `claude --resume <id> --fork-session` for Claude; what about other agents
     (codex, pi, …)? Is v0.1 Claude-only?
+15. **Merging knowledge across machines** (PR #1 review). The knowledge repo is organised by **projects and
+    topics**, not by machine, and every machine writes to it. A project can have agents on several machines
+    (`@cws noesis` and `@mac noesis` are two groups), and their notes have to end up in one place. Today's
+    memory repo shows the risks: one flat `memory/` folder, one shared `MEMORY.md` index, and `sync.sh` pulls
+    at session start and commits + pushes at session end. If the rebase fails it only writes to `.sync.log`,
+    so a machine can silently stop syncing.
+
+    Ways notes can collide:
+    - two machines **add** notes to the same project at once (different files; only the index collides);
+    - two machines **edit the same note** (e.g. a project's status) → a git text conflict;
+    - the same fact gets written twice as separate notes (duplicates that slowly drift apart);
+    - two notes **contradict** each other (one says "decided X", another "decided Y").
+
+    Proposal to discuss:
+    - **Organise by project/topic, not machine.** e.g. `knowledge/projects/<project>/` and
+      `knowledge/topics/<topic>/`. A group *points at* a project (several host-bound groups → one project), so
+      spec §6.3's `groups/<machine>/<group>.md` becomes `projects/<project>/context.md`. The machine is a
+      frontmatter field, not a folder.
+    - **Raw notes are append-only.** Roll-ups and agents only *create* files, never edit them, with names that
+      can't collide: `<date>-<machine>-<slug>-<short id>.md`. Concurrent adds then never conflict.
+    - **Indexes are generated, not hand-edited.** `MEMORY.md` and per-project indexes are rebuilt from
+      frontmatter after every pull, so they never conflict. (Cheap interim: `merge=union` in `.gitattributes`.)
+    - **Curated files have a single writer.** Each project's `context.md` (the short summary agents load) is
+      updated only by a **consolidation** step: an agent reads the raw notes added since the last run, removes
+      duplicates, records contradictions as open questions instead of picking a side, and rewrites `context.md`.
+      It runs in one place (the hub), so curated files never get concurrent edits. In short: many writers for raw
+      notes, one writer for summaries.
+    - **Topics are tags.** A note lives under one project and carries `topics: [...]`; topic pages are generated
+      views or consolidated the same way.
+    - **Sync must fail loudly.** A rebase failure should show up (e.g. `! sync` on the machine's root in the tree),
+      not only in a log file.
+
+    Open: who picks a note's project/topic (the child chooses from the existing list given in the roll-up prompt,
+    new ones need a y/n?); when consolidation runs (after every roll-up, nightly, or on a key); and whether this
+    `knowledge/` tree replaces Claude Code's flat auto-memory layout or sits next to it.
 
 ## Topology and connections
 
-15. **Which host is the hub?** Fixed (e.g. always the Mac), or wherever the TUI is opened? A moving hub would
+16. **Which host is the hub?** Fixed (e.g. always the Mac), or wherever the TUI is opened? A moving hub would
     need the layout store synced after all.
-16. **ET via helper — verify the mechanism** (ET isn't installed on this VM, nothing is checked):
+17. **ET via helper — verify the mechanism** (ET isn't installed on this VM, nothing is checked):
     - Can an ET command carry a plain byte stream without a PTY, or is a port forward + bridge required?
     - Bridge on cws: e.g. `socat TCP-LISTEN:<port>,bind=127.0.0.1,fork EXEC:'hc connect'` as a systemd user
       unit. Who installs it — manual, or dev-env?
     - How long does `etserver` keep a session while the hub sleeps? Is port 2022 reachable from the hub?
     - Does the helper's ET → SSH fallback behave well with hc's own reconnect retries?
-17. **First real test:** install `hc` on cws and the hub, `hc machine add` over SSH, then confirm one
+18. **First real test:** install `hc` on cws and the hub, `hc machine add` over SSH, then confirm one
     `events.subscribe` on the hub's core shows both machines with status, labels and parents.
 
 ## Implementation
 
-18. **Stack.** herdr-core is Rust. Proposal: Rust + ratatui, possibly reusing herdr-core's crates for the API
+19. **Stack.** herdr-core is Rust. Proposal: Rust + ratatui, possibly reusing herdr-core's crates for the API
     types (check whether they're published or usable as a git dependency) — otherwise generate types from
     `hc.openrpc.json`.
-19. **Layout store:** a local file (TOML/JSON/SQLite) vs an hc document on the hub core (`doc.set`, versioned,
+20. **Layout store:** a local file (TOML/JSON/SQLite) vs an hc document on the hub core (`doc.set`, versioned,
     atomic). And how to recover when terminal addresses no longer match (re-match by thread label?).
-20. **TODO — spike: tree and main view as two TUI apps in one tmux window.** Instead of one TUI with its own
+21. **TODO — spike: tree and main view as two TUI apps in one tmux window.** Instead of one TUI with its own
     panes, run the tree as one app in a left tmux pane and the main view as a second app in a right pane. Moving
     between them, resizing, zooming and splitting then use your existing tmux keys, with nothing new to learn.
     The spike should answer:
@@ -74,7 +109,7 @@ and delete the question from this file.
       the right pane with `tmux respawn-pane` running the main view (or plain `hc attach <address>`) for the
       selected agent.
     - **Could the main view just be `hc attach`?** That gives the live agent terminal for free, so typing goes
-      straight to the agent. Is that enough for v0.1, or do we still need a conversation renderer (question 23)?
+      straight to the agent. Is that enough for v0.1, or do we still need a conversation renderer (question 24)?
     - **Focus.** `Enter` in the tree should move focus to the main view pane (`tmux select-pane`), and the usual
       tmux pane keys move back. Check that tree keys like `]a` and `h/j/k/l` don't clash with tmux or
       vim-tmux-navigator bindings.
@@ -88,7 +123,7 @@ and delete the question from this file.
 
 ## Testing and demos
 
-21. **How to test it end to end.** Proposal, in layers:
+22. **How to test it end to end.** Proposal, in layers:
     - **Fake core:** a small server that speaks hc's JSON-RPC over a unix socket and plays back recorded
       `events.subscribe` snapshots and event streams (captured from a real hc 0.1.18). It can also inject
       failures: `missed`, a dropped connection, an offline machine. This tests the tree and the reconnect
@@ -103,10 +138,10 @@ and delete the question from this file.
       a **scratch** memory repo (never `person-claude-memory`), and check the commit landed.
 
     Open: which layers are worth it for v0.1, and where tests run (CI on GitHub vs only on cws).
-22. **How to capture what it looks like for PRs.** Proposal (user's suggestion): record a scripted session with
+23. **How to capture what it looks like for PRs.** Proposal (user's suggestion): record a scripted session with
     **asciinema**, render it, convert it to **MP4 (H.264)** and attach it to the PR description.
     - Record inside a fixed-size tmux pane (e.g. 120×36) so recordings are reproducible. The same tmux script
-      from question 21 can drive the demo, so the video and the test show the same thing.
+      from question 22 can drive the demo, so the video and the test show the same thing.
     - Render the `.cast` with `agg`, passing `--font-dir` with a mono/Nerd font from nixpkgs (e.g.
       jetbrains-mono), otherwise glyphs come out as boxes. Then use `ffmpeg` to make an H.264 MP4 that plays in
       the browser.
@@ -122,6 +157,6 @@ and delete the question from this file.
 
 ## Later: main view
 
-23. Show the conversation when a node is opened. `terminal.attach` (framed mode) streams the live screen;
+24. Show the conversation when a node is opened. `terminal.attach` (framed mode) streams the live screen;
     a real conversation view likely needs the transcript (e.g. Claude's JSONL) — read with `file.read` over the
     core, which works on any machine?

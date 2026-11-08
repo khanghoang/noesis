@@ -237,6 +237,9 @@ the central memory repo, not code. (Code-producing forks with worktrees are out 
 - Group knowledge is **a view into the central memory**, not a separate store: each group has a context file in
   the memory repo, `groups/<machine>/<group-id>.md`, which points at relevant memories and holds group-specific
   notes.
+  **Provisional:** the knowledge repo is organised by projects and topics, not machines, so this path probably
+  becomes a per-project context that several host-bound groups point at. How notes from different machines
+  merge is being brainstormed in open question 15.
 - **Subgroups copy the parent's context file when created** and then evolve independently. Because the file
   holds pointers, shared memories are not duplicated.
 - How agents *load* group context at start is open (see open questions).

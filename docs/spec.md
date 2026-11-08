@@ -3,13 +3,17 @@
 Status: **brainstorm / spec only — no code yet.** Last updated 2026-11-08.
 Open questions live in [open-questions.md](open-questions.md); source material in [references/](references/).
 
-noesis is an **opinionated, keyboard-first TUI client of [herdr](https://herdr.dev)** for running AI coding
-agents across several machines. It shows hosts, groups, agents and threads in a neo-tree-style sidebar, and
-treats one centralized memory repo as the agent's long-term knowledge — the foundation for a "true personal
-agent".
+noesis is an **opinionated, keyboard-first TUI built on top of
+[herdr-core](https://github.com/herdrdev/herdr-core)** (`hc`) for running AI coding agents across several
+machines. herdr-core is a terminal runtime that "draws nothing": it runs programs in terminals that outlive
+their viewer, connects machines, and exposes everything over a JSON-RPC API. noesis is the opinionated layer
+on top: a neo-tree-style view of groups, agents and threads, plus one centralized memory repo as the agent's
+long-term knowledge — the foundation for a "true personal agent".
 
-Scope of this document: the **tree view** and everything it depends on (data model, topology, transport, fork
-and roll-up). The **main view** (conversation display when a node is opened) comes after the tree is done.
+noesis is **not** a client of the herdr app (the older workspace/tab/pane UI). It talks only to herdr-core.
+
+Scope of this document: the **tree view** and everything it depends on (data model, topology, connections,
+fork and roll-up). The **main view** (conversation display when a node is opened) comes after the tree is done.
 
 ---
 
@@ -18,23 +22,23 @@ and roll-up). The **main view** (conversation display when a node is opened) com
 1. **TUI first, minimal mouse.** Every action has a key; nothing requires a click.
 2. **One centralized memory.** All agents on all machines read and write the same knowledge repo
    (`person-claude-memory` on GitHub). This is noesis's first opinion.
-3. **Machines run no noesis code.** A machine needs herdr, a way in (ET and/or SSH) and a checkout of the memory
+3. **Machines run no noesis code.** A machine needs `hc`, a way in (ET and/or SSH) and a checkout of the memory
    repo. All noesis logic lives on the hub.
-4. **herdr owns live runtime, noesis owns structure.** herdr knows panes, agents and their status; noesis owns
-   groups, ordering, folds and thread lineage.
+4. **herdr-core owns runtime, noesis owns meaning.** hc knows terminals, their status, parents, labels and
+   machines; noesis decides what a group, an agent and a thread are, and keeps order, folds and roll-up state.
 
 ## 2. Vocabulary
 
-| Term | Meaning | herdr equivalent |
+| Term | Meaning | herdr-core equivalent |
 |---|---|---|
-| **hub** | The host where the noesis TUI runs. Owns the layout. Also a machine for its own agents. | the local herdr client |
-| **machine** | Any host running a herdr server + agents that the hub connects to. | herdr server (one session) |
-| **group** | Generic, nestable container for agents. A "project" is just a group. Belongs to exactly one machine. | none — noesis-owned |
-| **agent** | A live agent process running in a herdr pane (claude, codex, …). | agent in a pane |
-| **thread** | An agent's conversation. Can be resumed after the process exits and can fork. | `AgentSessionInfo` (`agent_session_id`, `agent_session_path`, `resume_argv`) |
+| **hub** | The host where the noesis TUI runs, next to the local hc core. Owns the layout. Also a machine for its own agents. | the local core |
+| **machine** | Any host whose hc core the hub's core has added. | `hc machine add` (name like `cws`) |
+| **group** | Generic, nestable container for agents. A "project" is just a group. Belongs to exactly one machine. | none — noesis-owned (possibly stored as labels/docs, open) |
+| **agent** | A live agent program (claude, codex, …) running in an hc terminal. | terminal (`cws/t3`) |
+| **thread** | An agent's conversation. Can be resumed after the program exits and can fork. | none — hc has no conversation concept; noesis records it (open) |
 
-"Session" is deliberately **not** used: herdr already uses it for its persistent server session.
-One agent may run several threads over its lifetime; a thread can outlive its agent.
+"Session" is deliberately **not** used: hc uses it for separate core sessions on one host
+(`--session scratch`). One agent may run several threads over its lifetime; a thread can outlive its agent.
 
 ## 3. Tree view
 
@@ -72,11 +76,16 @@ Hierarchy: `root group (@machine) → subgroup* → agent → thread*` (threads 
 
 ### 3.3 Status glyphs (draft)
 
+Status comes from hc, which stores whatever the program reports through **OSC 7501** (`idle`, `working`,
+`done`, `blocked`, `error`, …). hc never guesses from screen text, so an agent that doesn't report has no
+status (open question: making Claude report).
+
 | Glyph | Meaning |
 |---|---|
-| `⚠` | needs input / blocked |
-| `●` | working |
-| `○` | idle / done |
+| `⚠` | `blocked` (needs input) or `error` |
+| `●` | `working` |
+| `○` | `idle` / `done` |
+| `·` | no status reported |
 | `⑂` | forked thread |
 | `✓` | thread rolled up into knowledge |
 | `✕` | machine offline |
@@ -98,38 +107,38 @@ Hierarchy: `root group (@machine) → subgroup* → agent → thread*` (threads 
 | `d` | close / delete (with confirmation) |
 | `f` | fork the thread under the cursor |
 | `u` | roll up the thread under the cursor |
-| `R` | re-authenticate the machine (opens its SSH login in a herdr pane) |
+| `R` | re-authenticate the machine (runs `hc machine login <machine>` in a terminal) |
 | `/` | filter |
 | `]a` / `[a` | jump to next / previous agent that needs input |
 
-`]a` (attention navigation) is the feature that should make noesis better than herdr's own sidebar.
+`]a` (attention navigation) is the feature that should make noesis better than a flat terminal list.
 
 ## 4. Topology
 
 ```
 ┌─────────────────────────── HUB (where the TUI lives) ───────────────────────────┐
 │                                                                                 │
-│  ┌─────────────── noesis ───────────────┐      ┌───── herdr (local) ─────┐      │
-│  │ TUI: tree view (main view later)     │      │ server + herdr.sock     │      │
-│  │ core: machine registry, tree model   │─────>│ hub's own agents        │      │
-│  │ transports: et, ssh fallback         │ unix │ (hub is a machine too)  │      │
-│  │ layout store (local file):           │      └─────────────────────────┘      │
-│  │   groups, order, folds, lineage      │                                       │
-│  └───────┬──────────────────┬───────────┘      et client, OpenSSH client        │
-│          │                  │                  memory checkout                  │
-└──────────┼──────────────────┼───────────────────────────────────────────────────┘
-           │                  │
-           │ ET :2022         │ SSH :22 (fallback; re-auth)
-           │ (survives sleep) ├─────────────────────────────┐
-           │                  │                             │ SSH :22
-           v                  v                             v
+│  ┌─────────────── noesis ───────────────┐      ┌──── hc core (local) ────┐      │
+│  │ TUI: tree view (main view later)     │      │ machine connections     │      │
+│  │ tree model, layout, roll-up          │─────>│ one terminal list and   │      │
+│  │ via helper: et, then ssh             │ JSON │ event stream for all    │      │
+│  │                                      │ -RPC │ docs (layout store?)    │      │
+│  └──────────────────────────────────────┘      │ hub's own terminals     │      │
+│                                                └──┬───────────────┬──────┘      │
+│  memory checkout                                  │               │             │
+└───────────────────────────────────────────────────┼───────────────┼─────────────┘
+                                                    │               │
+                    ┌───────────────────────────────┘               │
+                    │ ET (survives sleep)                           │ SSH
+                    │ via --via helper                              │ hc machine add
+                    v                                               v
 ┌───────────── MACHINE: cws ─────────────┐   ┌──────── MACHINE: pi ────────┐
-│ etserver -> socat 127.0.0.1:N ──┐      │   │ sshd -> unix-socket fwd ──┐ │
-│ sshd -> unix-socket fwd ────────┤      │   │                           │ │
-│                                 v      │   │                           v │
-│ herdr server + herdr.sock              │   │ herdr server + herdr.sock   │
-│   workspaces, tabs, panes              │   │   agents, threads           │
-│   agents (claude, ...), threads        │   │   transcripts               │
+│ etserver -> bridge -> hc connect       │   │ sshd -> hc connect          │
+│ (ssh -> hc connect as fallback)        │   │                             │
+│                                        │   │                             │
+│ hc core (remote)                       │   │ hc core (remote)            │
+│   terminals: agents, threads           │   │   terminals: agents         │
+│   status via OSC 7501, labels          │   │   status, labels            │
 │   transcripts (~/.claude/.../*.jsonl)  │   │                             │
 │ memory checkout                        │   │ memory checkout             │
 └───────────────────┬────────────────────┘   └──────────────┬──────────────┘
@@ -144,69 +153,67 @@ Hierarchy: `root group (@machine) → subgroup* → agent → thread*` (threads 
 
 | Location | Components |
 |---|---|
-| **Hub only** | noesis TUI + core, layout store, transports, machine registry (with transport preference per machine) |
-| **Every machine** | herdr server, agents and their transcripts, memory repo checkout |
-| **ET machines (cws)** | `etserver` and a socat bridge from `127.0.0.1:<port>` to `herdr.sock` |
+| **Hub only** | noesis TUI, the local hc core (holds every machine connection), the via helper script, layout |
+| **Every machine** | hc core, agent terminals and their transcripts, memory repo checkout |
+| **ET machines (cws)** | `etserver` and a bridge that runs `hc connect` for incoming ET connections |
 | **GitHub** | memories, memory index, group contexts — the only state shared between hosts |
 
 ### 4.2 Flows
 
 | Flow | Path | Content |
 |---|---|---|
-| Status | machine herdr → transport → hub | `events.subscribe` stream; on (re)connect: subscribe, then `session.snapshot` |
-| Commands | hub → transport → machine herdr | `agent.start`, `agent.prompt`, `agent.wait`, `pane.close`, … |
+| Status | remote core → local core → noesis | one `events.subscribe` stream covering all machines (`cws/t7`) |
+| Commands | noesis → local core → remote core | `terminal.run` / `send` / `wait` / `read` / `kill` with `on: <machine>` or full addresses |
 | Memory | each machine ↔ GitHub | agents pull before start; child agents push on roll-up |
-| Setup (once, manual) | you | `herdr --remote <host>` to install/start herdr; install `etserver`; run the socat bridge as a user service |
+| Setup (once, manual) | you | install `hc` and add machines (`hc machine add`, with `--via` for ET); install `etserver` and the bridge on cws |
 
-## 5. Transport
+## 5. Connections
 
-noesis talks herdr's **JSON socket API directly** (newline-delimited JSON over the machine's `herdr.sock`)
-instead of using herdr's `--machine` CLI forwarding. Reasons:
+### 5.1 noesis ↔ local core
 
-- `--machine` is **SSH-only** (OpenSSH + ControlMaster), so it can't use ET.
-- `--machine` is request/response only — `events.subscribe` isn't among the forwarded commands — so the hub
-  would have to poll. A direct socket stream gives live events.
+- noesis opens the **local hc core's unix socket** and speaks JSON-RPC 2.0, one message per line (plain mode).
+  It never connects to remote machines itself: the local core already keeps every machine connection and
+  **combines all terminals and events into one list and one stream**, addressed as `cws/t7`.
+- Framed mode (`hello {framed: true}`) is only needed for `terminal.attach` streams — i.e. the main view later.
+- **Event handling** (from the hc API docs): `events.subscribe` replies with a snapshot and `seq`; apply
+  events in `seq` order using the per-type rules (`created`, `status`, `labels`, `finished`, `removed`, …).
+  On `missed`, replace the state with the fresh snapshot and drop events at or below its `seq`. `seq` restarts
+  with each core process, so take a fresh snapshot after reconnecting. A `heartbeat` arrives every 15 s.
+- **Compatibility:** call `hello` / `rpc.discover` on connect and check the protocol generation (1 at hc
+  0.1.18). The API only grows within a generation.
 
-### 5.1 Model
+### 5.2 Local core ↔ machines
 
-```
-noesis core ──herdr JSON API──> Transport ──> remote herdr.sock
-                                ├─ et  : ET port forward → socat on remote → herdr.sock
-                                └─ ssh : OpenSSH unix-socket forward (-L local.sock:remote.sock)
-```
+- **SSH machines** (e.g. pi): plain `hc machine add <ssh-target> --name pi`. The core retries lost connections
+  itself; when SSH needs a password or code again, `hc machine login pi` (noesis key `R`).
+- **ET machines** (e.g. the workspace cws, where ET is allowed): `hc machine add --name cws --via '<helper>'`.
+  A `--via` command runs locally, gets a shell line as its last argument, must carry stdin/stdout unchanged,
+  ask no questions, and **must not request a remote PTY**. ET opens a PTY for its interactive sessions, so the
+  likely shape is: a long-lived ET port forward plus, on cws, a bridge that runs `hc connect` per incoming
+  connection; the helper connects to the forwarded port. **Unverified** — see open questions.
+- **Automatic fallback ET → SSH** (decided 2026-11-08) lives in the **via helper**: try the ET path first,
+  otherwise run `ssh cws "<shell line>"`. This is the only noesis code outside the TUI, and it runs on the hub.
+- Why ET: it logs in via SSH once, then survives hub sleep and network changes without a new SSH login — this
+  addresses the daily re-auth + sleep problem on the workspace.
 
-- A transport only provides **byte streams to the remote herdr socket**. It must support **several
-  concurrent connections** — herdr wants one long-lived connection per subscription plus separate connections
-  for requests and snapshots.
-- **Per machine:** an ordered transport list, e.g. `cws: [et, ssh]`, `pi: [ssh]`. **Automatic fallback** to the
-  next transport when one can't connect. (Decided 2026-11-08.)
-- **ET is primary on the workspace cws** (ET is allowed there). ET logs in via SSH once, then survives hub
-  sleep and network changes without a new SSH login — this addresses the daily re-auth + sleep problem.
-- **Reconnect** is the transport's job. After reconnecting, follow herdr's recovery protocol: open a new
-  subscription, wait for `subscription_started`, then `session.snapshot` on another connection; treat events
-  as invalidation signals, never replay them onto the snapshot. Same on `events_lost`.
-- **Re-auth is visible, never prompted by noesis.** When SSH needs a login, the root shows `! auth`; `R` opens
-  the machine's login in a herdr pane.
-- **Version check on connect:** read protocol metadata (`ping` / `session.snapshot`) and refuse protocol
-  versions noesis doesn't know. Ignore unknown fields (herdr's stated compatibility rule).
+### 5.3 Trade-offs accepted
 
-### 5.2 Trade-offs accepted
-
-- noesis does not use `herdr machine add` / `--machine`. herdr's own UI may keep its SSH machines alongside.
-  Remote install/setup stays manual via `herdr --remote <host>`.
-- The ET path's socat bridge exposes the herdr socket on remote `127.0.0.1` — reachable by **any local user
-  on that machine**. Fine on a single-user VM; a risk on a shared host. (Direct unix-socket forwarding over ET
-  would avoid it — unverified, see open questions.)
-- noesis depends on herdr's socket protocol (protocol 22 at herdr 0.9.5) rather than its CLI.
+- **One hub core holds all connections.** If the hub's core is down, noesis sees nothing — but remote
+  terminals keep running (programs live on their machine).
+- The ET bridge on cws accepts connections on a local port; **any local user on cws who can reach that port can
+  drive its hc core**. Fine on a single-user VM; a risk on a shared host.
+- noesis depends on herdr-core's API, which is still **preview** (protocol generation 1, version 0.x).
 - The hub can drive agents on every machine, so its SSH/ET credentials are the most sensitive thing in the setup.
 
-### 5.3 Identity
+### 5.4 Identity
 
-herdr ids (`w1:p1`, agent names) are scoped to one server and may change across herdr restarts. noesis keys:
-
-- agents and panes by `(machine, herdr id)` for live operations;
-- **threads by `(machine, agent_session_id)`** for anything persisted (layout, lineage). Session ids survive
-  restarts, and `resume_argv` lets noesis bring a dead thread back.
+- Terminals have addresses (`t3` locally, `cws/t3` on a machine) and optional names unique among live
+  terminals. noesis uses addresses for live operations.
+- hc has **no conversation/session id**. noesis needs a stable **thread id** for anything persisted (layout,
+  lineage). Proposal: the agent records it as a terminal label (e.g. `thread=<claude session id>`, set by a
+  Claude hook via `hc label`), which noesis reads from the `labels` events. Open question.
+- Native lineage: every terminal has `parent` (the terminal that started it), and events can be filtered with
+  `children_of`. Forks use this (§6.2).
 
 ## 6. Threads and knowledge
 
@@ -217,9 +224,12 @@ the central memory repo, not code. (Code-producing forks with worktrees are out 
 
 ### 6.2 Fork (`f`)
 
-- Creates a **new pane in the same cwd** with a forked conversation (e.g. `claude --resume <id> --fork-session`).
+- `terminal.run` on the same machine and cwd with `parent` set to the source terminal, starting a forked
+  conversation (e.g. `claude --resume <id> --fork-session`) and labels such as `thread-parent=<id>`.
 - Forks start with **normal permissions** — no forced plan/read-only mode for now (relaxed 2026-11-08).
-- The new thread appears as a child of the source thread (`⑂`); lineage (`parent_thread`) is stored by noesis.
+- The new thread appears as a child of the source thread (`⑂`).
+- hc behaviour to decide on: children **end with their parent** unless started with `outlive_parent`, and the
+  parent gets **notes typed into it** when a child needs attention or ends unless `no_notify` (open question).
 - Forks may be forked again.
 
 ### 6.3 Group context
@@ -238,14 +248,14 @@ The **child agent writes and pushes its own memory file**; noesis only orchestra
 ```
 hub (noesis)                         machine (child agent)                 GitHub
 ─────────────                        ─────────────────────                 ──────
-1. agent.prompt(child, ROLLUP) ───>  2. distill findings
+1. terminal.send(child, ROLLUP) ──>  2. distill findings
                                      3. write memory/<date>-<slug>.md
                                      4. append index line
                                      5. pull --rebase, commit, push ──────> repo
-6. agent.wait(child, idle|done) <──  (prints ROLLUP-DONE <commit-sha>)
+6. terminal.wait(child) <──────────  (prints ROLLUP-DONE <commit-sha>)
 7. verify: sha exists on GitHub
-8. agent.prompt(parent, "learned X, see <file>")
-9. close child pane; node -> "✓ <slug> -> knowledge"
+8. terminal.send(parent, "learned X, see <file>")
+9. kill child terminal; node -> "✓ <slug> -> knowledge"
 ```
 
 What noesis owns:
@@ -254,8 +264,9 @@ What noesis owns:
   (`name`, `description`, `type`, `group:`, `machine:` tags), index line format, "never edit other memory
   files", "retry push on rejection".
 - **A machine-readable finish line:** the child ends with `ROLLUP-DONE <sha>` or `ROLLUP-FAILED <reason>`,
-  read via `agent.read`.
-- **Verify before closing:** the child pane closes only after the commit is visible on GitHub. On failure the
+  read via `terminal.read`. (Alternative: the child reports it itself with `hc send` to its parent, which hc
+  supports natively — open question.)
+- **Verify before closing:** the child terminal ends only after the commit is visible on GitHub. On failure the
   thread stays open and shows `! rollup`.
 - **Concurrent writers are expected** (every machine writes). Safety comes from one new file per memory, an
   append-only index (conflicts resolve by keeping both lines), and pull-rebase-retry.
@@ -265,11 +276,13 @@ What noesis owns:
 
 | State | Owner | Where |
 |---|---|---|
-| Panes, agents, status, transcripts | herdr | each machine |
-| Groups, order, folds, thread lineage, machine registry | noesis | hub, local file (format open) |
+| Terminals, status, labels, parents, transcripts | hc | each machine's core (combined by the hub's core) |
+| Groups, order, folds, thread lineage | noesis | hub — local file or an hc document on the hub core (open) |
 | Memories, index, group contexts | everyone | GitHub `person-claude-memory` |
 
-Layout stays on the hub (not synced) because there is one hub and layout changes constantly.
+Layout stays on the hub (not synced) because there is one hub and layout changes constantly. hc's
+**documents** (`doc.get` / `doc.set`: versioned JSON up to 1 MiB, stored atomically in core state, with a
+`doc` event on change) are a candidate layout store.
 
 ## 8. Decision log
 
@@ -284,5 +297,6 @@ Layout stays on the hub (not synced) because there is one hub and layout changes
 | 2026-11-08 | forks are not locked to read-only (for now) |
 | 2026-11-08 | hub/machine topology; layout lives on the hub |
 | 2026-11-08 | every machine writes to the memory repo directly |
-| 2026-11-08 | noesis owns transport: ET primary (allowed on workspace cws), automatic SSH fallback |
+| 2026-11-08 | ET primary for the workspace cws (ET allowed there), automatic SSH fallback |
 | 2026-11-08 | roll-up: child agent writes + pushes its own memory file |
+| 2026-11-08 | build on **herdr-core** (`hc`), not the herdr app; noesis talks only to the local hc core (PR #1 review) |

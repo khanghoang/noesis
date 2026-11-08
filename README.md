@@ -8,3 +8,7 @@ Status: **spec only — no code yet.**
 - [docs/spec.md](docs/spec.md) — what's decided
 - [docs/open-questions.md](docs/open-questions.md) — where to resume
 - [docs/references/](docs/references/) — pinned herdr-core docs/schema and distilled notes
+
+## License
+
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE).

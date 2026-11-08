@@ -51,8 +51,40 @@ and delete the question from this file.
 17. **Layout store format** on the hub (TOML/JSON/SQLite) and how to recover when herdr ids no longer match
     (re-match by `agent_session_id`, then by cwd + agent name?).
 
+## Testing and demos
+
+18. **How to test it end to end.** Proposal, in layers:
+    - **Fake herdr:** a small server that speaks herdr's newline-delimited JSON over a unix socket and plays back
+      recorded `session.snapshot` responses and event streams (captured from a real herdr 0.9.5). It can also
+      inject failures: `events_lost`, a dropped connection, an offline machine. This tests the tree and the
+      reconnect logic without real agents.
+    - **Transport tests:** run the fake herdr behind real `ssh -L` unix-socket forwarding and behind ET + socat
+      on a test host, then kill the link mid-stream and check that noesis reconnects, resubscribes and catches up.
+    - **TUI tests:** drive noesis inside tmux (`send-keys` for input, `capture-pane` for output) and compare
+      the screen to stored text snapshots. Covers the keymap, folding, reordering, and refused moves across
+      machines. If the stack has a test backend (e.g. ratatui's `TestBackend`), use it for fast unit-level
+      snapshots too.
+    - **Real smoke test:** one scripted run against a real herdr with a cheap agent: fork a thread, roll it up
+      into a **scratch** memory repo (never `person-claude-memory`), and check the commit landed.
+
+    Open: which layers are worth it for v0.1, and where tests run (CI on GitHub vs only on cws).
+19. **How to capture what it looks like for PRs.** Proposal (user's suggestion): record a scripted session with
+    **asciinema**, render it, convert it to **MP4 (H.264)** and attach it to the PR description.
+    - Record inside a fixed-size tmux pane (e.g. 120×36) so recordings are reproducible. The same tmux script
+      from question 18 can drive the demo, so the video and the test show the same thing.
+    - Render the `.cast` with `agg`, passing `--font-dir` with a mono/Nerd font from nixpkgs (e.g.
+      jetbrains-mono), otherwise glyphs come out as boxes. Then use `ffmpeg` to make an H.264 MP4 that plays in
+      the browser.
+    - Attach with `gh` as in the `verify-frontend` skill. Lessons from the AgentTree demos are in the
+      `project_agent-tree` memory: keep private session titles out of frame, and use the fake herdr or
+      demo-only agents.
+    - Keep the `.cast` too (small, text, replayable), e.g. under `docs/demos/` for spec walkthroughs.
+
+    Open: should every UI PR require a recording, and should we also attach a still screenshot (one frame
+    rendered from the cast) for quick viewing?
+
 ## Later: main view
 
-18. Show the conversation when a node is opened. `agent.read` returns terminal output only; a real conversation
+20. Show the conversation when a node is opened. `agent.read` returns terminal output only; a real conversation
     view likely needs the transcript at `agent_session_path` (e.g. Claude's JSONL) — read over the transport or
     a separate file fetch?

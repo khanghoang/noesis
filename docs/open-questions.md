@@ -65,10 +65,30 @@ and delete the question from this file.
     `hc.openrpc.json`.
 19. **Layout store:** a local file (TOML/JSON/SQLite) vs an hc document on the hub core (`doc.set`, versioned,
     atomic). And how to recover when terminal addresses no longer match (re-match by thread label?).
+20. **TODO — spike: tree and main view as two TUI apps in one tmux window.** Instead of one TUI with its own
+    panes, run the tree as one app in a left tmux pane and the main view as a second app in a right pane. Moving
+    between them, resizing, zooming and splitting then use your existing tmux keys, with nothing new to learn.
+    The spike should answer:
+    - **How the two apps talk.** The tree has to tell the main view which agent to show. Options: a small local
+      socket between them; both watch the same hc document (e.g. `noesis-selection`); or the tree just restarts
+      the right pane with `tmux respawn-pane` running the main view (or plain `hc attach <address>`) for the
+      selected agent.
+    - **Could the main view just be `hc attach`?** That gives the live agent terminal for free, so typing goes
+      straight to the agent. Is that enough for v0.1, or do we still need a conversation renderer (question 23)?
+    - **Focus.** `Enter` in the tree should move focus to the main view pane (`tmux select-pane`), and the usual
+      tmux pane keys move back. Check that tree keys like `]a` and `h/j/k/l` don't clash with tmux or
+      vim-tmux-navigator bindings.
+    - **Prompts and dialogs** (fork name, delete confirmation, roll-up y/n): inside the tree pane, or
+      `tmux display-popup`?
+    - **Cost.** noesis would require running inside tmux on the hub. Is that acceptable? What happens outside
+      tmux (refuse to start, or fall back to a single-app layout)?
+    - **Done when:** a throwaway prototype (e.g. two scripts like `assets/mock_noesis.py`) shows select → open
+      → type → back to tree with only tmux's own pane keys, plus a short write-up of the chosen IPC and what
+      breaks.
 
 ## Testing and demos
 
-20. **How to test it end to end.** Proposal, in layers:
+21. **How to test it end to end.** Proposal, in layers:
     - **Fake core:** a small server that speaks hc's JSON-RPC over a unix socket and plays back recorded
       `events.subscribe` snapshots and event streams (captured from a real hc 0.1.18). It can also inject
       failures: `missed`, a dropped connection, an offline machine. This tests the tree and the reconnect
@@ -83,10 +103,10 @@ and delete the question from this file.
       a **scratch** memory repo (never `person-claude-memory`), and check the commit landed.
 
     Open: which layers are worth it for v0.1, and where tests run (CI on GitHub vs only on cws).
-21. **How to capture what it looks like for PRs.** Proposal (user's suggestion): record a scripted session with
+22. **How to capture what it looks like for PRs.** Proposal (user's suggestion): record a scripted session with
     **asciinema**, render it, convert it to **MP4 (H.264)** and attach it to the PR description.
     - Record inside a fixed-size tmux pane (e.g. 120×36) so recordings are reproducible. The same tmux script
-      from question 20 can drive the demo, so the video and the test show the same thing.
+      from question 21 can drive the demo, so the video and the test show the same thing.
     - Render the `.cast` with `agg`, passing `--font-dir` with a mono/Nerd font from nixpkgs (e.g.
       jetbrains-mono), otherwise glyphs come out as boxes. Then use `ffmpeg` to make an H.264 MP4 that plays in
       the browser.
@@ -102,6 +122,6 @@ and delete the question from this file.
 
 ## Later: main view
 
-22. Show the conversation when a node is opened. `terminal.attach` (framed mode) streams the live screen;
+23. Show the conversation when a node is opened. `terminal.attach` (framed mode) streams the live screen;
     a real conversation view likely needs the transcript (e.g. Claude's JSONL) — read with `file.read` over the
     core, which works on any machine?
